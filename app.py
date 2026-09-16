@@ -37,6 +37,9 @@ CATEGORIES = [
 ]
 UNITS = ["un", "kg", "g", "L", "mL", "pct", "cx", "dz"]
 
+# Evita usar uma chave chamada "items" no st.session_state.
+# SessionStateProxy já possui o método .items(), o que pode fazer
+# st.session_state.items retornar um método em vez da lista salva.
 storage = LocalStorage()
 
 
@@ -80,8 +83,8 @@ def normalize_items(value) -> list[dict]:
                 "category": str(raw.get("category", "Outros") or "Outros"),
                 "completed": bool(raw.get("completed", False)),
                 "favorite": bool(raw.get("favorite", False)),
-                "created_at": str(raw.get("created_at", now_iso())),
-                "updated_at": str(raw.get("updated_at", now_iso())),
+                "created_at": str(raw.get("created_at") or now_iso()),
+                "updated_at": str(raw.get("updated_at") or now_iso()),
             }
         )
 
@@ -89,7 +92,7 @@ def normalize_items(value) -> list[dict]:
 
 
 def storage_read() -> list[dict]:
-    """Lê a lista do localStorage usando a API oficial do componente."""
+    """Lê a lista persistida no localStorage do navegador."""
     try:
         raw = storage.getItem(STORAGE_KEY)
     except Exception:
@@ -98,18 +101,17 @@ def storage_read() -> list[dict]:
 
 
 def storage_write(items: list[dict]) -> None:
-    """Persiste a lista no navegador antes de qualquer novo rerun."""
+    """Grava a lista no localStorage do navegador."""
     payload = json.dumps(items, ensure_ascii=False)
     storage.setItem(STORAGE_KEY, payload)
-    # O componente escreve no browser via JS; um pequeno intervalo evita que
-    # um rerun interrompa a gravação em conexões/dispositivos mais lentos.
+    # Dá tempo ao componente de concluir a escrita no browser antes do rerun.
     time.sleep(0.15)
 
 
-def persist_and_rerun(message: str | None = None) -> None:
-    storage_write(st.session_state.items)
+def persist(items: list[dict], message: str | None = None) -> None:
+    storage_write(items)
     if message:
-        st.session_state.toast_message = message
+        st.session_state["toast_message"] = message
     st.rerun()
 
 
@@ -118,20 +120,17 @@ def quantity_text(value: float) -> str:
     return str(int(value)) if value.is_integer() else f"{value:g}".replace(".", ",")
 
 
-def find_item(item_id: str) -> dict | None:
-    return next(
-        (item for item in st.session_state.items if item["id"] == item_id),
-        None,
-    )
+def find_item(items: list[dict], item_id: str) -> dict | None:
+    return next((item for item in items if item["id"] == item_id), None)
 
 
-def add_item(name: str, quantity: float, unit: str, category: str) -> None:
+def add_item(items: list[dict], name: str, quantity: float, unit: str, category: str) -> None:
     name = name.strip()
     if not name:
         return
 
     timestamp = now_iso()
-    st.session_state.items.insert(
+    items.insert(
         0,
         {
             "id": str(uuid4()),
@@ -147,39 +146,105 @@ def add_item(name: str, quantity: float, unit: str, category: str) -> None:
     )
 
 
-def toggle_completed(item_id: str) -> None:
-    item = find_item(item_id)
+def toggle_completed(items: list[dict], item_id: str) -> None:
+    item = find_item(items, item_id)
     if item:
         item["completed"] = not item["completed"]
         item["updated_at"] = now_iso()
-        persist_and_rerun()
+        persist(items)
 
 
-def toggle_favorite(item_id: str) -> None:
-    item = find_item(item_id)
+def toggle_favorite(items: list[dict], item_id: str) -> None:
+    item = find_item(items, item_id)
     if item:
         item["favorite"] = not item["favorite"]
         item["updated_at"] = now_iso()
-        persist_and_rerun()
+        persist(items)
 
 
-def delete_item(item_id: str) -> None:
-    st.session_state.items = [
-        item for item in st.session_state.items if item["id"] != item_id
-    ]
-    st.session_state.editing_id = None
-    persist_and_rerun("Item removido")
+def delete_item(items: list[dict], item_id: str) -> None:
+    items[:] = [item for item in items if item["id"] != item_id]
+    st.session_state["editing_id"] = None
+    persist(items, "Item removido")
 
 
-def render_item(item: dict) -> None:
+def render_edit_form(items: list[dict], item: dict) -> None:
+    item_id = item["id"]
+
+    with st.container(border=True):
+        st.markdown(
+            '<div class="edit-heading">Editar item</div>',
+            unsafe_allow_html=True,
+        )
+
+        with st.form(f"edit_form_{item_id}", border=False):
+            name = st.text_input("Item", value=item["name"], max_chars=80)
+
+            c1, c2, c3 = st.columns([1, 1, 1.45], gap="small")
+            quantity = c1.number_input(
+                "Quantidade",
+                min_value=0.1,
+                value=float(item["quantity"]),
+                step=1.0,
+            )
+            unit = c2.selectbox(
+                "Unidade",
+                UNITS,
+                index=UNITS.index(item["unit"]) if item["unit"] in UNITS else 0,
+            )
+            category = c3.selectbox(
+                "Categoria",
+                CATEGORIES,
+                index=(
+                    CATEGORIES.index(item["category"])
+                    if item["category"] in CATEGORIES
+                    else CATEGORIES.index("Outros")
+                ),
+            )
+
+            save_col, delete_col = st.columns(2, gap="small")
+            save = save_col.form_submit_button(
+                "Salvar",
+                type="primary",
+                use_container_width=True,
+            )
+            remove = delete_col.form_submit_button(
+                "Excluir",
+                use_container_width=True,
+            )
+
+        if save:
+            if not name.strip():
+                st.error("Digite o nome do item.")
+            else:
+                current = find_item(items, item_id)
+                if current:
+                    current.update(
+                        {
+                            "name": name.strip(),
+                            "quantity": float(quantity),
+                            "unit": unit,
+                            "category": category,
+                            "updated_at": now_iso(),
+                        }
+                    )
+                st.session_state["editing_id"] = None
+                persist(items, "Item atualizado")
+
+        if remove:
+            delete_item(items, item_id)
+
+        if st.button("Cancelar", key=f"cancel_{item_id}"):
+            st.session_state["editing_id"] = None
+            st.rerun()
+
+
+def render_item(items: list[dict], item: dict) -> None:
     item_id = item["id"]
     completed = item["completed"]
 
     with st.container(border=True):
-        check_col, text_col, star_col = st.columns(
-            [0.72, 5.8, 0.72],
-            gap="small",
-        )
+        check_col, text_col, star_col = st.columns([0.72, 5.8, 0.72], gap="small")
 
         with check_col:
             check_label = "✓" if completed else "○"
@@ -189,7 +254,7 @@ def render_item(item: dict) -> None:
                 help="Marcar como pendente" if completed else "Marcar como concluído",
                 use_container_width=True,
             ):
-                toggle_completed(item_id)
+                toggle_completed(items, item_id)
 
         with text_col:
             title_class = "task-name completed" if completed else "task-name"
@@ -211,9 +276,9 @@ def render_item(item: dict) -> None:
                 help="Remover dos favoritos" if item["favorite"] else "Favoritar",
                 use_container_width=True,
             ):
-                toggle_favorite(item_id)
+                toggle_favorite(items, item_id)
 
-        action_col, spacer = st.columns([1.2, 5.8], gap="small")
+        action_col, _ = st.columns([1.2, 5.8], gap="small")
         with action_col:
             if st.button(
                 "•••",
@@ -221,91 +286,15 @@ def render_item(item: dict) -> None:
                 use_container_width=True,
                 help="Opções do item",
             ):
-                st.session_state.editing_id = (
-                    None if st.session_state.editing_id == item_id else item_id
-                )
+                current_editing = st.session_state.get("editing_id")
+                st.session_state["editing_id"] = None if current_editing == item_id else item_id
                 st.rerun()
 
-    if st.session_state.editing_id == item_id:
-        render_edit_form(item)
+    if st.session_state.get("editing_id") == item_id:
+        render_edit_form(items, item)
 
 
-def render_edit_form(item: dict) -> None:
-    item_id = item["id"]
-
-    with st.container(border=True):
-        st.markdown(
-            '<div class="edit-heading">Editar item</div>',
-            unsafe_allow_html=True,
-        )
-
-        with st.form(f"edit_form_{item_id}", border=False):
-            name = st.text_input(
-                "Item",
-                value=item["name"],
-                max_chars=80,
-            )
-
-            c1, c2, c3 = st.columns([1, 1, 1.45], gap="small")
-            quantity = c1.number_input(
-                "Quantidade",
-                min_value=0.1,
-                value=float(item["quantity"]),
-                step=1.0,
-            )
-            unit = c2.selectbox(
-                "Unidade",
-                UNITS,
-                index=UNITS.index(item["unit"])
-                if item["unit"] in UNITS
-                else 0,
-            )
-            category = c3.selectbox(
-                "Categoria",
-                CATEGORIES,
-                index=CATEGORIES.index(item["category"])
-                if item["category"] in CATEGORIES
-                else CATEGORIES.index("Outros"),
-            )
-
-            save_col, delete_col = st.columns(2, gap="small")
-            save = save_col.form_submit_button(
-                "Salvar",
-                type="primary",
-                use_container_width=True,
-            )
-            remove = delete_col.form_submit_button(
-                "Excluir",
-                use_container_width=True,
-            )
-
-        if save:
-            if not name.strip():
-                st.error("Digite o nome do item.")
-            else:
-                current = find_item(item_id)
-                if current:
-                    current.update(
-                        {
-                            "name": name.strip(),
-                            "quantity": float(quantity),
-                            "unit": unit,
-                            "category": category,
-                            "updated_at": now_iso(),
-                        }
-                    )
-                st.session_state.editing_id = None
-                persist_and_rerun("Item atualizado")
-
-        if remove:
-            delete_item(item_id)
-
-        if st.button("Cancelar", key=f"cancel_{item_id}"):
-            st.session_state.editing_id = None
-            st.rerun()
-
-
-def render_add_box() -> None:
+def render_add_box(items: list[dict]) -> None:
     with st.container(border=True):
         with st.form("add_form", clear_on_submit=True, border=False):
             name = st.text_input(
@@ -337,32 +326,26 @@ def render_add_box() -> None:
             )
 
         if submitted and name.strip():
-            add_item(name, quantity, unit, category)
-            persist_and_rerun("Item adicionado")
+            add_item(items, name, quantity, unit, category)
+            persist(items, "Item adicionado")
 
-
-# O pacote streamlit-local-storage 0.0.25 expõe getItem(key) e
-# setItem(key, value). Não passamos o argumento `key=` do Streamlit aqui,
-# porque ele não faz parte da assinatura desses métodos nessa versão.
-if "items" not in st.session_state:
-    st.session_state.items = storage_read()
 
 if "editing_id" not in st.session_state:
-    st.session_state.editing_id = None
+    st.session_state["editing_id"] = None
 if "toast_message" not in st.session_state:
-    st.session_state.toast_message = None
+    st.session_state["toast_message"] = None
 
-if st.session_state.toast_message:
-    st.toast(st.session_state.toast_message)
-    st.session_state.toast_message = None
+if st.session_state["toast_message"]:
+    st.toast(st.session_state["toast_message"])
+    st.session_state["toast_message"] = None
 
-items = st.session_state.items
+# Importante: usamos uma variável Python normal para a lista. Assim evitamos
+# colisão com st.session_state.items(), que é um método interno do Streamlit.
+items = storage_read()
+
 pending = sorted(
     [item for item in items if not item["completed"]],
-    key=lambda item: (
-        not item["favorite"],
-        item["created_at"],
-    ),
+    key=lambda item: (not item["favorite"], item["created_at"]),
 )
 completed = [item for item in items if item["completed"]]
 
@@ -384,16 +367,12 @@ search = st.text_input(
 ).strip().casefold()
 
 if search:
-    pending = [
-        item for item in pending if search in item["name"].casefold()
-    ]
-    completed = [
-        item for item in completed if search in item["name"].casefold()
-    ]
+    pending = [item for item in pending if search in item["name"].casefold()]
+    completed = [item for item in completed if search in item["name"].casefold()]
 
 if pending:
     for item in pending:
-        render_item(item)
+        render_item(items, item)
 else:
     st.markdown(
         """
@@ -410,23 +389,12 @@ with st.expander(
     expanded=bool(completed),
 ):
     for item in completed:
-        render_item(item)
+        render_item(items, item)
 
-    if completed:
-        if st.button("Limpar concluídos", use_container_width=True):
-            st.session_state.items = [
-                item
-                for item in st.session_state.items
-                if not item["completed"]
-            ]
-            persist_and_rerun("Concluídos removidos")
+    if completed and st.button("Limpar concluídos", use_container_width=True):
+        items[:] = [item for item in items if not item["completed"]]
+        persist(items, "Concluídos removidos")
 
-st.markdown(
-    '<div class="add-spacer"></div>',
-    unsafe_allow_html=True,
-)
-render_add_box()
-st.markdown(
-    '<div class="bottom-safe-area"></div>',
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="add-spacer"></div>', unsafe_allow_html=True)
+render_add_box(items)
+st.markdown('<div class="bottom-safe-area"></div>', unsafe_allow_html=True)
