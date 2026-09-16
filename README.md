@@ -1,39 +1,28 @@
 # Mercado
 
-Lista de mercado em Python + Streamlit, redesenhada com foco em simplicidade, leitura rápida e interação direta.
+Lista de compras em **Python + Streamlit**, com interface mobile-first inspirada em aplicativos de tarefas.
 
-## Direção de interface
+## Persistência
 
-A interface segue uma lógica de lista de tarefas:
+Não usa banco de dados. A lista é salva no **localStorage do navegador** por meio do componente `streamlit-local-storage`.
 
-- navegação simples por **Minha lista**, **Pendentes** e **Concluídos**;
-- adição rápida de item no topo;
-- quantidade, unidade e categoria ficam como detalhes opcionais;
-- cada item tem uma ação principal clara: marcar como concluído;
-- edição aparece apenas quando solicitada;
-- itens concluídos ficam recolhidos na visualização principal;
-- sem dashboards, cards de métricas ou elementos decorativos desnecessários.
+Isso significa que:
 
-## Paleta
+- os itens permanecem após fechar e abrir o navegador;
+- cada navegador/dispositivo mantém sua própria lista;
+- limpar os dados do site no navegador também apaga a lista;
+- nenhum banco precisa ser configurado no servidor.
 
-- `#9EE493` — estado/acento positivo
-- `#DAF7DC` — superfícies de seleção e apoio
-- `#ABC8C0` — bordas e separadores
-- `#70566D` — texto secundário e acentos
-- `#42273B` — texto principal e alto contraste
+## Recursos
 
-## Estrutura
-
-```text
-mercado/
-├── app.py
-├── database.py
-├── styles.py
-├── requirements.txt
-├── .streamlit/
-│   └── config.toml
-└── README.md
-```
+- adicionar itens rapidamente;
+- quantidade, unidade e categoria opcionais;
+- concluir/desfazer conclusão;
+- favoritar;
+- editar e excluir;
+- busca;
+- seção recolhível de concluídos;
+- interface responsiva para celular, tablet e desktop.
 
 ## Executar
 
@@ -41,7 +30,3 @@ mercado/
 pip install -r requirements.txt
 streamlit run app.py
 ```
-
-O arquivo `mercado.db` é criado automaticamente na primeira execução.
-
-> Observação: em hospedagens com sistema de arquivos efêmero, SQLite pode ser apagado quando a instância reinicia. Para persistência em produção, use um banco externo.
