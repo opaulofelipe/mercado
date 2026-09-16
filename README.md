@@ -1,27 +1,39 @@
 # Mercado
 
-Aplicativo de lista de compras em Python + Streamlit, com interface minimalista inspirada na lógica visual do Microsoft To Do.
+Lista de mercado em Python + Streamlit, redesenhada com foco em simplicidade, leitura rápida e interação direta.
 
-## Interface
+## Direção de interface
 
-- Lista principal simples e limpa
-- Adição rápida de item
-- Detalhes opcionais de categoria, quantidade e unidade
-- Filtros por status e categoria
-- Busca
-- Itens concluídos separados dos pendentes
-- Exclusão individual e limpeza dos concluídos
-- Layout responsivo para desktop e celular
+A interface segue uma lógica de lista de tarefas:
+
+- navegação simples por **Minha lista**, **Pendentes** e **Concluídos**;
+- adição rápida de item no topo;
+- quantidade, unidade e categoria ficam como detalhes opcionais;
+- cada item tem uma ação principal clara: marcar como concluído;
+- edição aparece apenas quando solicitada;
+- itens concluídos ficam recolhidos na visualização principal;
+- sem dashboards, cards de métricas ou elementos decorativos desnecessários.
 
 ## Paleta
 
-- `#9EE493`
-- `#DAF7DC`
-- `#ABC8C0`
-- `#70566D`
-- `#42273B`
+- `#9EE493` — estado/acento positivo
+- `#DAF7DC` — superfícies de seleção e apoio
+- `#ABC8C0` — bordas e separadores
+- `#70566D` — texto secundário e acentos
+- `#42273B` — texto principal e alto contraste
 
-As cores são usadas de forma discreta para não poluir a interface.
+## Estrutura
+
+```text
+mercado/
+├── app.py
+├── database.py
+├── styles.py
+├── requirements.txt
+├── .streamlit/
+│   └── config.toml
+└── README.md
+```
 
 ## Executar
 
@@ -30,4 +42,6 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-O banco SQLite `mercado.db` é criado automaticamente na primeira execução.
+O arquivo `mercado.db` é criado automaticamente na primeira execução.
+
+> Observação: em hospedagens com sistema de arquivos efêmero, SQLite pode ser apagado quando a instância reinicia. Para persistência em produção, use um banco externo.
