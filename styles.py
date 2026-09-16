@@ -7,9 +7,6 @@ PALETTE = {
     "sage": "#ABC8C0",
     "mauve": "#70566D",
     "plum": "#42273B",
-    "white": "#FFFFFF",
-    "canvas": "#F6F7F6",
-    "soft": "#F0F3F1",
 }
 
 
@@ -18,14 +15,17 @@ def inject_styles() -> None:
         f"""
         <style>
             :root {{
-                --green: {PALETTE["green"]};
-                --mint: {PALETTE["mint"]};
-                --sage: {PALETTE["sage"]};
-                --mauve: {PALETTE["mauve"]};
-                --plum: {PALETTE["plum"]};
-                --white: {PALETTE["white"]};
-                --canvas: {PALETTE["canvas"]};
-                --soft: {PALETTE["soft"]};
+                --green: {PALETTE['green']};
+                --mint: {PALETTE['mint']};
+                --sage: {PALETTE['sage']};
+                --mauve: {PALETTE['mauve']};
+                --plum: {PALETTE['plum']};
+                --bg: #080808;
+                --surface: #1D1D1F;
+                --surface-2: #242326;
+                --text: #F3F2F4;
+                --muted: #AAA5AC;
+                --stroke: rgba(255,255,255,.055);
             }}
 
             html, body, [class*="css"] {{
@@ -33,211 +33,226 @@ def inject_styles() -> None:
             }}
 
             .stApp {{
-                background: var(--canvas);
-                color: var(--plum);
+                background: var(--bg);
+                color: var(--text);
             }}
 
-            header[data-testid="stHeader"] {{
-                background: transparent;
-            }}
-
-            #MainMenu, footer {{
-                visibility: hidden;
-            }}
+            header[data-testid="stHeader"] {{ background: transparent; }}
+            #MainMenu, footer {{ visibility: hidden; }}
 
             .block-container {{
-                max-width: 900px;
-                padding-top: 2.2rem;
-                padding-bottom: 5rem;
+                max-width: 760px;
+                padding: 1.3rem 1rem 2rem;
             }}
 
-            section[data-testid="stSidebar"] {{
-                background: #F1F4F2;
-                border-right: 1px solid rgba(171, 200, 192, .55);
+            .app-header {{
+                padding: .2rem .15rem 1rem;
             }}
 
-            section[data-testid="stSidebar"] .block-container {{
-                padding-top: 1.5rem;
-            }}
-
-            .brand {{
-                color: var(--plum);
-                font-size: 1.15rem;
+            .app-kicker {{
+                color: var(--green);
+                font-size: .88rem;
                 font-weight: 700;
-                letter-spacing: -.02em;
-                margin: .25rem 0 1.2rem;
-                display: flex;
-                align-items: center;
-                gap: .55rem;
+                margin-bottom: .22rem;
             }}
 
-            .brand-mark {{
-                width: 26px;
-                height: 26px;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 7px;
-                background: var(--green);
-                color: var(--plum);
-                font-size: .9rem;
-                font-weight: 800;
-            }}
-
-            .page-title {{
-                color: var(--plum);
-                font-size: clamp(1.8rem, 4vw, 2.35rem);
-                line-height: 1.15;
+            .app-title {{
+                color: var(--text);
+                font-size: clamp(2rem, 7vw, 2.65rem);
+                font-weight: 700;
+                line-height: 1.05;
                 letter-spacing: -.035em;
-                font-weight: 700;
-                margin: 0;
             }}
 
-            .page-meta {{
-                color: var(--mauve);
-                font-size: .91rem;
-                margin-top: .35rem;
-                margin-bottom: 1.35rem;
-            }}
-
-            .list-label {{
-                color: var(--mauve);
-                font-size: .83rem;
-                font-weight: 600;
-                margin: 1.15rem 0 .45rem;
-            }}
-
-            .item-title {{
-                color: var(--plum);
-                font-size: 1rem;
-                font-weight: 600;
-                line-height: 1.3;
-                margin-top: .08rem;
-            }}
-
-            .item-title.done {{
-                text-decoration: line-through;
-                color: var(--mauve);
-                opacity: .78;
-            }}
-
-            .item-meta {{
-                color: var(--mauve);
-                font-size: .79rem;
-                line-height: 1.35;
-                margin-top: .18rem;
-            }}
-
-            .empty-state {{
-                border: 1px dashed rgba(112, 86, 109, .35);
-                border-radius: 10px;
-                padding: 2.2rem 1rem;
-                text-align: center;
-                color: var(--mauve);
-                background: rgba(255, 255, 255, .58);
-                margin-top: 1rem;
-            }}
-
-            .empty-state strong {{
-                color: var(--plum);
-                display: block;
-                margin-bottom: .2rem;
-            }}
-
-            div[data-testid="stForm"] {{
-                background: transparent;
-                border: 0;
-                padding: 0;
+            .app-meta {{
+                color: var(--muted);
+                font-size: .92rem;
+                margin-top: .42rem;
             }}
 
             div[data-testid="stTextInput"] input,
             div[data-testid="stNumberInput"] input,
             div[data-baseweb="select"] > div {{
-                border-radius: 8px !important;
-                border-color: rgba(112, 86, 109, .22) !important;
-                background: var(--white) !important;
-                color: var(--plum) !important;
-                min-height: 42px;
+                background: var(--surface) !important;
+                color: var(--text) !important;
+                border: 1px solid var(--stroke) !important;
+                border-radius: 18px !important;
+                min-height: 52px !important;
+                box-shadow: none !important;
             }}
 
-            div[data-testid="stTextInput"] input:focus,
-            div[data-testid="stNumberInput"] input:focus {{
-                border-color: var(--mauve) !important;
-                box-shadow: 0 0 0 2px rgba(112, 86, 109, .14) !important;
+            div[data-testid="stTextInput"] input::placeholder {{
+                color: #817C83 !important;
             }}
 
-            .add-caption {{
-                color: var(--mauve);
-                font-size: .82rem;
-                margin-bottom: .4rem;
+            div[data-testid="stVerticalBlockBorderWrapper"] {{
+                background: var(--surface) !important;
+                border: 1px solid var(--stroke) !important;
+                border-radius: 20px !important;
+                box-shadow: none !important;
+                margin-bottom: .48rem;
+            }}
+
+            div[data-testid="stVerticalBlockBorderWrapper"] > div {{
+                padding-top: .28rem;
+                padding-bottom: .28rem;
+            }}
+
+            .task-name {{
+                display: block;
+                color: var(--text);
+                font-size: 1.04rem;
+                font-weight: 500;
+                line-height: 1.2;
+            }}
+
+            .task-name.completed {{
+                color: #969298;
+                text-decoration: line-through;
+                text-decoration-thickness: 1.5px;
+            }}
+
+            .task-meta {{
+                display: block;
+                color: #8D8890;
+                font-size: .79rem;
+                margin-top: .22rem;
+            }}
+
+            .task-copy-button {{
+                background: transparent;
+                border: 0;
+                padding: .48rem .1rem .42rem;
+                margin: 0;
+                text-align: left;
+                width: 100%;
+                font: inherit;
             }}
 
             div[data-testid="stButton"] button,
             div[data-testid="stFormSubmitButton"] button {{
-                border-radius: 8px;
-                min-height: 40px;
-                font-weight: 600;
+                min-height: 46px;
+                border-radius: 17px;
+                background: transparent;
+                color: var(--muted);
+                border: 0;
                 box-shadow: none;
-                transition: background .12s ease, border-color .12s ease, transform .12s ease;
+                font-weight: 600;
             }}
 
             div[data-testid="stButton"] button:hover,
             div[data-testid="stFormSubmitButton"] button:hover {{
-                transform: none;
+                background: rgba(255,255,255,.045);
+                color: var(--text);
+                border: 0;
             }}
 
-            div[data-testid="stVerticalBlockBorderWrapper"] {{
-                border: 1px solid rgba(171, 200, 192, .58) !important;
-                border-radius: 9px !important;
-                background: var(--white);
-                box-shadow: none !important;
+            div[data-testid="stFormSubmitButton"] button[kind="primary"] {{
+                background: rgba(158,228,147,.14);
+                color: var(--green);
+                border: 1px solid rgba(158,228,147,.12);
             }}
 
-            div[data-testid="stVerticalBlockBorderWrapper"]:hover {{
-                border-color: rgba(112, 86, 109, .35) !important;
+            div[data-testid="stHorizontalBlock"] div[data-testid="column"]:first-child div[data-testid="stButton"] button {{
+                font-size: 1.45rem;
+                color: var(--sage);
+            }}
+
+            div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(3) div[data-testid="stButton"] button {{
+                font-size: 1.3rem;
+                color: #8E8A90;
             }}
 
             details {{
-                border-color: rgba(171, 200, 192, .55) !important;
-                border-radius: 9px !important;
                 background: transparent !important;
+                border: 0 !important;
             }}
 
-            div[data-testid="stCheckbox"] label {{
-                min-height: 44px;
-                align-items: center;
+            details > summary {{
+                width: fit-content;
+                background: rgba(158,228,147,.13);
+                color: #74C29D !important;
+                border-radius: 14px;
+                padding: .62rem .9rem !important;
+                font-weight: 700;
+                margin: .55rem 0 .5rem;
             }}
 
-            section[data-testid="stSidebar"] div[role="radiogroup"] label {{
-                min-height: 42px;
-                border-radius: 8px;
-                padding-left: .35rem;
+            details > div {{
+                border: 0 !important;
+                padding-left: 0 !important;
+                padding-right: 0 !important;
             }}
 
-            section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {{
-                background: rgba(218, 247, 220, .72);
+            .edit-heading {{
+                color: var(--green);
+                font-size: .88rem;
+                font-weight: 700;
+                margin: .25rem 0 .65rem;
             }}
 
             label[data-testid="stWidgetLabel"] p {{
-                color: var(--plum);
-                font-weight: 600;
+                color: var(--muted) !important;
+                font-size: .82rem;
             }}
 
-            @media (max-width: 700px) {{
+            .empty-state {{
+                background: var(--surface);
+                border: 1px solid var(--stroke);
+                border-radius: 20px;
+                padding: 1.8rem 1rem;
+                margin-bottom: .65rem;
+                text-align: center;
+            }}
+
+            .empty-title {{
+                color: var(--text);
+                font-weight: 650;
+                font-size: 1rem;
+            }}
+
+            .empty-copy {{
+                color: var(--muted);
+                font-size: .86rem;
+                margin-top: .25rem;
+            }}
+
+            .loading-state {{
+                color: var(--muted);
+                text-align: center;
+                padding: 3rem 1rem;
+            }}
+
+            .add-spacer {{ height: .8rem; }}
+            .bottom-safe-area {{ height: 2rem; }}
+
+            @media (max-width: 640px) {{
                 .block-container {{
-                    padding: 1.15rem .9rem 4rem;
+                    max-width: 100%;
+                    padding: .8rem .68rem 1.5rem;
                 }}
 
-                .page-title {{
-                    font-size: 1.85rem;
+                .app-header {{
+                    padding-top: .2rem;
+                    padding-bottom: .75rem;
                 }}
 
-                .page-meta {{
-                    margin-bottom: 1rem;
+                .app-title {{ font-size: 2rem; }}
+
+                div[data-testid="stVerticalBlockBorderWrapper"] {{
+                    border-radius: 18px !important;
+                    margin-bottom: .4rem;
                 }}
 
-                div[data-testid="stHorizontalBlock"] {{
-                    gap: .55rem;
+                div[data-testid="stTextInput"] input,
+                div[data-testid="stNumberInput"] input,
+                div[data-baseweb="select"] > div {{
+                    min-height: 50px !important;
+                }}
+
+                div[data-testid="stButton"] button,
+                div[data-testid="stFormSubmitButton"] button {{
+                    min-height: 46px;
                 }}
             }}
         </style>
