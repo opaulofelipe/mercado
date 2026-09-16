@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from html import escape
 from uuid import uuid4
@@ -56,18 +57,25 @@ def normalize_items(value) -> list[dict]:
     if not isinstance(value, list):
         return []
 
-    normalized = []
+    normalized: list[dict] = []
     for raw in value:
         if not isinstance(raw, dict):
             continue
+
         name = str(raw.get("name", "")).strip()
         if not name:
             continue
+
+        try:
+            quantity = float(raw.get("quantity", 1) or 1)
+        except (TypeError, ValueError):
+            quantity = 1.0
+
         normalized.append(
             {
                 "id": str(raw.get("id") or uuid4()),
                 "name": name,
-                "quantity": float(raw.get("quantity", 1) or 1),
+                "quantity": quantity,
                 "unit": str(raw.get("unit", "un") or "un"),
                 "category": str(raw.get("category", "Outros") or "Outros"),
                 "completed": bool(raw.get("completed", False)),
@@ -76,16 +84,26 @@ def normalize_items(value) -> list[dict]:
                 "updated_at": str(raw.get("updated_at", now_iso())),
             }
         )
+
     return normalized
 
 
+def storage_read() -> list[dict]:
+    """Lê a lista do localStorage usando a API oficial do componente."""
+    try:
+        raw = storage.getItem(STORAGE_KEY)
+    except Exception:
+        return []
+    return normalize_items(raw)
+
+
 def storage_write(items: list[dict]) -> None:
-    st.session_state.save_revision = st.session_state.get("save_revision", 0) + 1
-    storage.setItem(
-        STORAGE_KEY,
-        json.dumps(items, ensure_ascii=False),
-        key=f"mercado_save_{st.session_state.save_revision}",
-    )
+    """Persiste a lista no navegador antes de qualquer novo rerun."""
+    payload = json.dumps(items, ensure_ascii=False)
+    storage.setItem(STORAGE_KEY, payload)
+    # O componente escreve no browser via JS; um pequeno intervalo evita que
+    # um rerun interrompa a gravação em conexões/dispositivos mais lentos.
+    time.sleep(0.15)
 
 
 def persist_and_rerun(message: str | None = None) -> None:
@@ -101,13 +119,17 @@ def quantity_text(value: float) -> str:
 
 
 def find_item(item_id: str) -> dict | None:
-    return next((item for item in st.session_state.items if item["id"] == item_id), None)
+    return next(
+        (item for item in st.session_state.items if item["id"] == item_id),
+        None,
+    )
 
 
 def add_item(name: str, quantity: float, unit: str, category: str) -> None:
     name = name.strip()
     if not name:
         return
+
     timestamp = now_iso()
     st.session_state.items.insert(
         0,
@@ -142,7 +164,9 @@ def toggle_favorite(item_id: str) -> None:
 
 
 def delete_item(item_id: str) -> None:
-    st.session_state.items = [item for item in st.session_state.items if item["id"] != item_id]
+    st.session_state.items = [
+        item for item in st.session_state.items if item["id"] != item_id
+    ]
     st.session_state.editing_id = None
     persist_and_rerun("Item removido")
 
@@ -152,7 +176,10 @@ def render_item(item: dict) -> None:
     completed = item["completed"]
 
     with st.container(border=True):
-        check_col, text_col, star_col = st.columns([0.72, 5.8, 0.72], gap="small")
+        check_col, text_col, star_col = st.columns(
+            [0.72, 5.8, 0.72],
+            gap="small",
+        )
 
         with check_col:
             check_label = "✓" if completed else "○"
@@ -168,10 +195,10 @@ def render_item(item: dict) -> None:
             title_class = "task-name completed" if completed else "task-name"
             st.markdown(
                 f"""
-                <button class="task-copy-button" onclick="return false;" tabindex="-1">
+                <div class="task-copy-button">
                     <span class="{title_class}">{escape(item['name'])}</span>
                     <span class="task-meta">{quantity_text(item['quantity'])} {escape(item['unit'])} · {escape(item['category'])}</span>
-                </button>
+                </div>
                 """,
                 unsafe_allow_html=True,
             )
@@ -188,8 +215,15 @@ def render_item(item: dict) -> None:
 
         action_col, spacer = st.columns([1.2, 5.8], gap="small")
         with action_col:
-            if st.button("•••", key=f"more_{item_id}", use_container_width=True, help="Opções do item"):
-                st.session_state.editing_id = None if st.session_state.editing_id == item_id else item_id
+            if st.button(
+                "•••",
+                key=f"more_{item_id}",
+                use_container_width=True,
+                help="Opções do item",
+            ):
+                st.session_state.editing_id = (
+                    None if st.session_state.editing_id == item_id else item_id
+                )
                 st.rerun()
 
     if st.session_state.editing_id == item_id:
@@ -198,26 +232,52 @@ def render_item(item: dict) -> None:
 
 def render_edit_form(item: dict) -> None:
     item_id = item["id"]
+
     with st.container(border=True):
-        st.markdown('<div class="edit-heading">Editar item</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="edit-heading">Editar item</div>',
+            unsafe_allow_html=True,
+        )
+
         with st.form(f"edit_form_{item_id}", border=False):
-            name = st.text_input("Item", value=item["name"], max_chars=80)
+            name = st.text_input(
+                "Item",
+                value=item["name"],
+                max_chars=80,
+            )
+
             c1, c2, c3 = st.columns([1, 1, 1.45], gap="small")
-            quantity = c1.number_input("Quantidade", min_value=0.1, value=float(item["quantity"]), step=1.0)
+            quantity = c1.number_input(
+                "Quantidade",
+                min_value=0.1,
+                value=float(item["quantity"]),
+                step=1.0,
+            )
             unit = c2.selectbox(
                 "Unidade",
                 UNITS,
-                index=UNITS.index(item["unit"]) if item["unit"] in UNITS else 0,
+                index=UNITS.index(item["unit"])
+                if item["unit"] in UNITS
+                else 0,
             )
             category = c3.selectbox(
                 "Categoria",
                 CATEGORIES,
-                index=CATEGORIES.index(item["category"]) if item["category"] in CATEGORIES else CATEGORIES.index("Outros"),
+                index=CATEGORIES.index(item["category"])
+                if item["category"] in CATEGORIES
+                else CATEGORIES.index("Outros"),
             )
 
             save_col, delete_col = st.columns(2, gap="small")
-            save = save_col.form_submit_button("Salvar", type="primary", use_container_width=True)
-            remove = delete_col.form_submit_button("Excluir", use_container_width=True)
+            save = save_col.form_submit_button(
+                "Salvar",
+                type="primary",
+                use_container_width=True,
+            )
+            remove = delete_col.form_submit_button(
+                "Excluir",
+                use_container_width=True,
+            )
 
         if save:
             if not name.strip():
@@ -257,30 +317,40 @@ def render_add_box() -> None:
 
             with st.expander("Quantidade e categoria", expanded=False):
                 c1, c2, c3 = st.columns([1, 1, 1.45], gap="small")
-                quantity = c1.number_input("Quantidade", min_value=0.1, value=1.0, step=1.0)
+                quantity = c1.number_input(
+                    "Quantidade",
+                    min_value=0.1,
+                    value=1.0,
+                    step=1.0,
+                )
                 unit = c2.selectbox("Unidade", UNITS)
-                category = c3.selectbox("Categoria", CATEGORIES, index=CATEGORIES.index("Outros"))
+                category = c3.selectbox(
+                    "Categoria",
+                    CATEGORIES,
+                    index=CATEGORIES.index("Outros"),
+                )
 
-            submitted = st.form_submit_button("＋ Adicionar", type="primary", use_container_width=True)
+            submitted = st.form_submit_button(
+                "＋ Adicionar",
+                type="primary",
+                use_container_width=True,
+            )
 
         if submitted and name.strip():
             add_item(name, quantity, unit, category)
             persist_and_rerun("Item adicionado")
 
 
-stored_value = storage.getItem(STORAGE_KEY, key="mercado_load")
+# O pacote streamlit-local-storage 0.0.25 expõe getItem(key) e
+# setItem(key, value). Não passamos o argumento `key=` do Streamlit aqui,
+# porque ele não faz parte da assinatura desses métodos nessa versão.
 if "items" not in st.session_state:
-    if "mercado_load" not in st.session_state and stored_value is None:
-        st.markdown('<div class="loading-state">Carregando sua lista…</div>', unsafe_allow_html=True)
-        st.stop()
-    st.session_state.items = normalize_items(st.session_state.get("mercado_load", stored_value))
+    st.session_state.items = storage_read()
 
 if "editing_id" not in st.session_state:
     st.session_state.editing_id = None
 if "toast_message" not in st.session_state:
     st.session_state.toast_message = None
-if "save_revision" not in st.session_state:
-    st.session_state.save_revision = 0
 
 if st.session_state.toast_message:
     st.toast(st.session_state.toast_message)
@@ -289,8 +359,10 @@ if st.session_state.toast_message:
 items = st.session_state.items
 pending = sorted(
     [item for item in items if not item["completed"]],
-    key=lambda item: (not item["favorite"], item["created_at"]),
-    reverse=False,
+    key=lambda item: (
+        not item["favorite"],
+        item["created_at"],
+    ),
 )
 completed = [item for item in items if item["completed"]]
 
@@ -305,10 +377,19 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-search = st.text_input("Buscar", placeholder="Buscar item", label_visibility="collapsed").strip().casefold()
+search = st.text_input(
+    "Buscar",
+    placeholder="Buscar item",
+    label_visibility="collapsed",
+).strip().casefold()
+
 if search:
-    pending = [item for item in pending if search in item["name"].casefold()]
-    completed = [item for item in completed if search in item["name"].casefold()]
+    pending = [
+        item for item in pending if search in item["name"].casefold()
+    ]
+    completed = [
+        item for item in completed if search in item["name"].casefold()
+    ]
 
 if pending:
     for item in pending:
@@ -324,15 +405,28 @@ else:
         unsafe_allow_html=True,
     )
 
-with st.expander(f"✓ Concluída ({len(completed)})", expanded=bool(completed)):
+with st.expander(
+    f"✓ Concluída ({len(completed)})",
+    expanded=bool(completed),
+):
     for item in completed:
         render_item(item)
 
     if completed:
         if st.button("Limpar concluídos", use_container_width=True):
-            st.session_state.items = [item for item in st.session_state.items if not item["completed"]]
+            st.session_state.items = [
+                item
+                for item in st.session_state.items
+                if not item["completed"]
+            ]
             persist_and_rerun("Concluídos removidos")
 
-st.markdown('<div class="add-spacer"></div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="add-spacer"></div>',
+    unsafe_allow_html=True,
+)
 render_add_box()
-st.markdown('<div class="bottom-safe-area"></div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="bottom-safe-area"></div>',
+    unsafe_allow_html=True,
+)
