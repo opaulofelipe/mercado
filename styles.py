@@ -66,6 +66,22 @@ def inject_styles() -> None:
                 font-weight: 700;
                 letter-spacing: -.02em;
                 margin: .25rem 0 1.2rem;
+                display: flex;
+                align-items: center;
+                gap: .55rem;
+            }}
+
+            .brand-mark {{
+                width: 26px;
+                height: 26px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 7px;
+                background: var(--green);
+                color: var(--plum);
+                font-size: .9rem;
+                font-weight: 800;
             }}
 
             .page-title {{
