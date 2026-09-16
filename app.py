@@ -1,519 +1,350 @@
-import sqlite3
-from contextlib import contextmanager
-from datetime import datetime
-from pathlib import Path
+from __future__ import annotations
 
 import streamlit as st
+
+from database import (
+    add_item,
+    delete_completed,
+    delete_item,
+    init_db,
+    list_items,
+    set_completed,
+    update_item,
+)
+from styles import inject_styles
 
 
 st.set_page_config(
     page_title="Mercado",
-    page_icon="🛒",
+    page_icon="✓",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-DB_PATH = Path(__file__).with_name("mercado.db")
-
-COLORS = {
-    "green": "#9EE493",
-    "mint": "#DAF7DC",
-    "sage": "#ABC8C0",
-    "mauve": "#70566D",
-    "plum": "#42273B",
-    "bg": "#F6F7F8",
-    "text": "#252229",
-    "muted": "#77727A",
-    "border": "#E7E5E8",
-}
+inject_styles()
+init_db()
 
 CATEGORIES = [
-    "Geral",
     "Hortifruti",
     "Padaria",
     "Açougue",
-    "Laticínios",
+    "Frios e laticínios",
     "Mercearia",
     "Bebidas",
+    "Congelados",
     "Higiene",
     "Limpeza",
+    "Pet",
     "Outros",
 ]
-
 UNITS = ["un", "kg", "g", "L", "mL", "pct", "cx", "dz"]
 
 
-st.markdown(
-    f"""
-    <style>
-    :root {{
-        --green: {COLORS['green']};
-        --mint: {COLORS['mint']};
-        --sage: {COLORS['sage']};
-        --mauve: {COLORS['mauve']};
-        --plum: {COLORS['plum']};
-        --bg: {COLORS['bg']};
-        --text: {COLORS['text']};
-        --muted: {COLORS['muted']};
-        --border: {COLORS['border']};
-    }}
-
-    html, body, [class*="css"] {{
-        font-family: Inter, "Segoe UI", Arial, sans-serif;
-    }}
-
-    .stApp {{
-        background: var(--bg);
-        color: var(--text);
-    }}
-
-    .block-container {{
-        max-width: 920px;
-        padding-top: 2.1rem;
-        padding-bottom: 5rem;
-    }}
-
-    header[data-testid="stHeader"] {{
-        background: transparent;
-    }}
-
-    #MainMenu, footer {{
-        visibility: hidden;
-    }}
-
-    section[data-testid="stSidebar"] {{
-        background: #F1F5F3;
-        border-right: 1px solid #E2E8E5;
-    }}
-
-    section[data-testid="stSidebar"] .block-container {{
-        padding-top: 1.2rem;
-    }}
-
-    .brand {{
-        display: flex;
-        align-items: center;
-        gap: .65rem;
-        margin-bottom: 1.4rem;
-    }}
-
-    .brand-icon {{
-        width: 34px;
-        height: 34px;
-        border-radius: 9px;
-        display: grid;
-        place-items: center;
-        background: var(--plum);
-        color: white;
-        font-size: 1rem;
-    }}
-
-    .brand-name {{
-        font-size: 1.05rem;
-        font-weight: 750;
-        color: var(--plum);
-    }}
-
-    .page-title {{
-        font-size: clamp(1.8rem, 5vw, 2.4rem);
-        font-weight: 780;
-        letter-spacing: -.035em;
-        color: var(--plum);
-        margin: 0 0 .15rem;
-    }}
-
-    .page-subtitle {{
-        color: var(--muted);
-        font-size: .93rem;
-        margin-bottom: 1.25rem;
-    }}
-
-    .add-wrap {{
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        box-shadow: 0 1px 2px rgba(0,0,0,.025);
-        padding: .2rem .6rem .05rem;
-        margin-bottom: 1rem;
-    }}
-
-    div[data-testid="stForm"] {{
-        border: 0;
-        background: transparent;
-        padding: 0;
-    }}
-
-    div[data-testid="stTextInput"] input,
-    div[data-testid="stNumberInput"] input,
-    div[data-baseweb="select"] > div {{
-        border-radius: 8px !important;
-        border-color: #DDDADF !important;
-        box-shadow: none !important;
-        background: white !important;
-    }}
-
-    div[data-testid="stTextInput"] input:focus,
-    div[data-testid="stNumberInput"] input:focus {{
-        border-color: var(--mauve) !important;
-    }}
-
-    div[data-testid="stButton"] button,
-    div[data-testid="stFormSubmitButton"] button {{
-        border-radius: 8px;
-        min-height: 39px;
-        font-weight: 650;
-        border: 1px solid #D8D5DA;
-        box-shadow: none;
-    }}
-
-    div[data-testid="stFormSubmitButton"] button[kind="primary"] {{
-        background: var(--plum);
-        border-color: var(--plum);
-        color: white;
-    }}
-
-    .list-label {{
-        color: var(--muted);
-        font-size: .78rem;
-        font-weight: 650;
-        text-transform: uppercase;
-        letter-spacing: .06em;
-        margin: 1.25rem 0 .5rem;
-    }}
-
-    .item-name {{
-        font-size: .98rem;
-        font-weight: 600;
-        color: var(--text);
-        line-height: 1.25;
-        padding-top: .1rem;
-    }}
-
-    .item-name.done {{
-        color: #969198;
-        text-decoration: line-through;
-        font-weight: 500;
-    }}
-
-    .item-meta {{
-        color: var(--muted);
-        font-size: .79rem;
-        margin-top: .18rem;
-    }}
-
-    div[data-testid="stVerticalBlockBorderWrapper"] {{
-        background: white;
-        border: 1px solid var(--border) !important;
-        border-radius: 9px !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,.02);
-    }}
-
-    div[data-testid="stCheckbox"] {{
-        padding-top: .15rem;
-    }}
-
-    div[data-testid="stCheckbox"] label span[data-baseweb="checkbox"] > div {{
-        border-radius: 50%;
-    }}
-
-    .count-line {{
-        display: flex;
-        gap: .45rem;
-        align-items: center;
-        color: var(--muted);
-        font-size: .82rem;
-        margin-top: .15rem;
-    }}
-
-    .dot {{
-        width: 5px;
-        height: 5px;
-        border-radius: 50%;
-        background: var(--sage);
-        display: inline-block;
-    }}
-
-    .empty {{
-        background: white;
-        border: 1px dashed #D8D5DA;
-        border-radius: 10px;
-        color: var(--muted);
-        text-align: center;
-        padding: 2.4rem 1rem;
-        margin-top: .5rem;
-        font-size: .92rem;
-    }}
-
-    .sidebar-count {{
-        color: var(--muted);
-        font-size: .78rem;
-        margin-top: -.65rem;
-        margin-bottom: .9rem;
-    }}
-
-    @media (max-width: 700px) {{
-        .block-container {{
-            padding: 1rem .8rem 4rem;
-        }}
-
-        .page-title {{
-            font-size: 1.8rem;
-        }}
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-@contextmanager
-def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def init_db():
-    with db() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS itens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome TEXT NOT NULL,
-                categoria TEXT NOT NULL DEFAULT 'Geral',
-                quantidade REAL NOT NULL DEFAULT 1,
-                unidade TEXT NOT NULL DEFAULT 'un',
-                prioridade TEXT NOT NULL DEFAULT 'Normal',
-                preco_estimado REAL NOT NULL DEFAULT 0,
-                preco_pago REAL NOT NULL DEFAULT 0,
-                comprado INTEGER NOT NULL DEFAULT 0,
-                criado_em TEXT NOT NULL,
-                atualizado_em TEXT NOT NULL
-            )
-            """
-        )
-
-
-def load_items():
-    with db() as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM itens
-            ORDER BY comprado ASC, atualizado_em DESC, id DESC
-            """
-        ).fetchall()
-    return [dict(row) for row in rows]
-
-
-def add_item(nome, categoria, quantidade, unidade):
-    now = datetime.now().isoformat(timespec="seconds")
-    with db() as conn:
-        conn.execute(
-            """
-            INSERT INTO itens
-            (nome, categoria, quantidade, unidade, prioridade,
-             preco_estimado, preco_pago, comprado, criado_em, atualizado_em)
-            VALUES (?, ?, ?, ?, 'Normal', 0, 0, 0, ?, ?)
-            """,
-            (nome.strip(), categoria, float(quantidade), unidade, now, now),
-        )
-
-
-def toggle_item(item_id, bought):
-    with db() as conn:
-        conn.execute(
-            "UPDATE itens SET comprado = ?, atualizado_em = ? WHERE id = ?",
-            (int(bool(bought)), datetime.now().isoformat(timespec="seconds"), item_id),
-        )
-
-
-def delete_item(item_id):
-    with db() as conn:
-        conn.execute("DELETE FROM itens WHERE id = ?", (item_id,))
-
-
-def clear_completed():
-    with db() as conn:
-        conn.execute("DELETE FROM itens WHERE comprado = 1")
-
-
-def qty_text(value):
+def quantity_text(value: float) -> str:
     value = float(value)
-    return str(int(value)) if value.is_integer() else str(value).replace(".", ",")
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:g}".replace(".", ",")
 
 
-init_db()
-items = load_items()
-
-pending = [i for i in items if not i["comprado"]]
-completed = [i for i in items if i["comprado"]]
+def toggle_item(item_id: int, widget_key: str) -> None:
+    set_completed(item_id, bool(st.session_state[widget_key]))
 
 
-with st.sidebar:
-    st.markdown(
-        """
-        <div class="brand">
-            <div class="brand-icon">✓</div>
-            <div class="brand-name">Mercado</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+def filtered_items(
+    items: list[dict],
+    view: str,
+    search: str,
+    category: str,
+) -> list[dict]:
+    result = items
 
-    view = st.radio(
-        "Visualização",
-        ["Minha lista", "Pendentes", "Concluídos"],
-        label_visibility="collapsed",
-    )
+    if view == "pending":
+        result = [item for item in result if not item["comprado"]]
+    elif view == "done":
+        result = [item for item in result if item["comprado"]]
 
-    st.markdown(
-        f'<div class="sidebar-count">{len(pending)} pendentes · {len(completed)} concluídos</div>',
-        unsafe_allow_html=True,
-    )
+    if category != "Todas":
+        result = [item for item in result if item["categoria"] == category]
 
-    category_filter = st.selectbox(
-        "Categoria",
-        ["Todas"] + CATEGORIES,
-    )
+    term = search.strip().casefold()
+    if term:
+        result = [item for item in result if term in item["nome"].casefold()]
 
-    if completed:
-        st.divider()
-        if st.button("Limpar concluídos", use_container_width=True):
-            clear_completed()
+    return result
+
+
+def render_item(item: dict) -> None:
+    item_id = int(item["id"])
+    checkbox_key = f"item_done_{item_id}"
+
+    with st.container(border=True):
+        check_col, text_col, action_col = st.columns([0.55, 6.6, 1.2])
+
+        with check_col:
+            st.checkbox(
+                f"Marcar {item['nome']} como comprado",
+                value=bool(item["comprado"]),
+                key=checkbox_key,
+                label_visibility="collapsed",
+                on_change=toggle_item,
+                args=(item_id, checkbox_key),
+            )
+
+        with text_col:
+            done_class = " done" if item["comprado"] else ""
+            st.markdown(
+                f'<div class="item-title{done_class}">{item["nome"]}</div>',
+                unsafe_allow_html=True,
+            )
+
+            metadata = (
+                f'{quantity_text(item["quantidade"])} {item["unidade"]}'
+                f' · {item["categoria"]}'
+            )
+            st.markdown(
+                f'<div class="item-meta">{metadata}</div>',
+                unsafe_allow_html=True,
+            )
+
+        with action_col:
+            if st.button(
+                "Editar",
+                key=f"edit_{item_id}",
+                use_container_width=True,
+                help=f"Editar {item['nome']}",
+            ):
+                st.session_state.editing_id = (
+                    None if st.session_state.get("editing_id") == item_id else item_id
+                )
+                st.rerun()
+
+    if st.session_state.get("editing_id") == item_id:
+        render_edit_form(item)
+
+
+def render_edit_form(item: dict) -> None:
+    item_id = int(item["id"])
+
+    with st.container(border=True):
+        st.markdown("**Detalhes do item**")
+
+        with st.form(f"edit_form_{item_id}", border=False):
+            name = st.text_input(
+                "Item",
+                value=item["nome"],
+                max_chars=80,
+            )
+
+            c1, c2, c3 = st.columns([1, 1, 1.65])
+            quantity = c1.number_input(
+                "Quantidade",
+                min_value=0.1,
+                value=float(item["quantidade"]),
+                step=1.0,
+            )
+            unit = c2.selectbox(
+                "Unidade",
+                UNITS,
+                index=UNITS.index(item["unidade"])
+                if item["unidade"] in UNITS
+                else 0,
+            )
+            category = c3.selectbox(
+                "Categoria",
+                CATEGORIES,
+                index=CATEGORIES.index(item["categoria"])
+                if item["categoria"] in CATEGORIES
+                else CATEGORIES.index("Outros"),
+            )
+
+            save_col, delete_col = st.columns([1.25, 1])
+            save = save_col.form_submit_button(
+                "Salvar",
+                type="primary",
+                use_container_width=True,
+            )
+            remove = delete_col.form_submit_button(
+                "Excluir item",
+                use_container_width=True,
+            )
+
+        if save:
+            try:
+                update_item(
+                    item_id,
+                    name,
+                    category,
+                    quantity,
+                    unit,
+                )
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                st.session_state.editing_id = None
+                st.toast("Item atualizado")
+                st.rerun()
+
+        if remove:
+            delete_item(item_id)
+            st.session_state.editing_id = None
+            st.toast("Item excluído")
+            st.rerun()
+
+        if st.button(
+            "Cancelar",
+            key=f"cancel_edit_{item_id}",
+        ):
+            st.session_state.editing_id = None
             st.rerun()
 
 
-st.markdown('<h1 class="page-title">Minha lista</h1>', unsafe_allow_html=True)
+if "editing_id" not in st.session_state:
+    st.session_state.editing_id = None
 
-if items:
-    st.markdown(
-        f"""
-        <div class="count-line">
-            <span>{len(pending)} pendentes</span>
-            <span class="dot"></span>
-            <span>{len(completed)} concluídos</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
+items = list_items()
+total = len(items)
+done_count = sum(bool(item["comprado"]) for item in items)
+pending_count = total - done_count
+
+with st.sidebar:
+    st.markdown('<div class="brand">✓ Mercado</div>', unsafe_allow_html=True)
+
+    view = st.radio(
+        "Visualização",
+        options=["all", "pending", "done"],
+        format_func=lambda value: {
+            "all": f"Minha lista  ·  {total}",
+            "pending": f"Pendentes  ·  {pending_count}",
+            "done": f"Concluídos  ·  {done_count}",
+        }[value],
+        label_visibility="collapsed",
     )
-else:
-    st.markdown(
-        '<div class="page-subtitle">Adicione o que precisa comprar.</div>',
-        unsafe_allow_html=True,
+
+    st.divider()
+
+    category_filter = st.selectbox(
+        "Categoria",
+        ["Todas", *CATEGORIES],
     )
 
-st.write("")
+    if done_count:
+        st.divider()
+        if st.button(
+            "Limpar concluídos",
+            use_container_width=True,
+            help="Excluir permanentemente todos os itens concluídos",
+        ):
+            removed = delete_completed()
+            st.session_state.editing_id = None
+            st.toast(f"{removed} item(ns) removido(s)")
+            st.rerun()
 
-with st.container():
-    with st.form("add_item", clear_on_submit=True):
-        c1, c2 = st.columns([5, 1])
-        name = c1.text_input(
+view_title = {
+    "all": "Minha lista",
+    "pending": "Pendentes",
+    "done": "Concluídos",
+}[view]
+
+view_meta = {
+    "all": f"{pending_count} pendente(s) · {done_count} concluído(s)",
+    "pending": f"{pending_count} item(ns) para comprar",
+    "done": f"{done_count} item(ns) concluído(s)",
+}[view]
+
+st.markdown(f'<h1 class="page-title">{view_title}</h1>', unsafe_allow_html=True)
+st.markdown(f'<div class="page-meta">{view_meta}</div>', unsafe_allow_html=True)
+
+st.markdown('<div class="add-caption">Adicionar item</div>', unsafe_allow_html=True)
+with st.form("add_item_form", clear_on_submit=True, border=False):
+    add_input_col, add_button_col = st.columns([6.6, 1.4])
+
+    with add_input_col:
+        new_name = st.text_input(
             "Novo item",
-            placeholder="Adicionar um item",
+            placeholder="Ex.: café, banana, detergente",
             label_visibility="collapsed",
+            max_chars=80,
         )
-        submit = c2.form_submit_button(
+
+    with add_button_col:
+        submitted = st.form_submit_button(
             "Adicionar",
             type="primary",
             use_container_width=True,
         )
 
-        with st.expander("Detalhes opcionais"):
-            d1, d2, d3 = st.columns([2, 1, 1])
-            category = d1.selectbox("Categoria", CATEGORIES)
-            quantity = d2.number_input("Quantidade", min_value=0.1, value=1.0, step=1.0)
-            unit = d3.selectbox("Unidade", UNITS)
+    with st.expander("Quantidade e categoria", expanded=False):
+        d1, d2, d3 = st.columns([1, 1, 1.75])
+        new_quantity = d1.number_input(
+            "Quantidade",
+            min_value=0.1,
+            value=1.0,
+            step=1.0,
+        )
+        new_unit = d2.selectbox("Unidade", UNITS)
+        new_category = d3.selectbox(
+            "Categoria",
+            CATEGORIES,
+            index=CATEGORIES.index("Outros"),
+        )
 
-        if submit:
-            if name.strip():
-                add_item(name, category, quantity, unit)
-                st.rerun()
-            else:
-                st.warning("Digite o nome do item.")
+    if submitted:
+        try:
+            add_item(
+                new_name,
+                new_category,
+                new_quantity,
+                new_unit,
+            )
+        except ValueError as exc:
+            st.error(str(exc))
+        else:
+            st.toast("Item adicionado")
+            st.rerun()
 
 search = st.text_input(
-    "Pesquisar",
-    placeholder="Pesquisar na lista",
+    "Buscar na lista",
+    placeholder="Buscar",
     label_visibility="collapsed",
 )
 
-visible = items[:]
-
-if view == "Pendentes":
-    visible = [i for i in visible if not i["comprado"]]
-elif view == "Concluídos":
-    visible = [i for i in visible if i["comprado"]]
-
-if category_filter != "Todas":
-    visible = [i for i in visible if i["categoria"] == category_filter]
-
-if search.strip():
-    term = search.strip().casefold()
-    visible = [i for i in visible if term in i["nome"].casefold()]
-
-
-def render_item(item):
-    with st.container(border=True):
-        check_col, text_col, delete_col = st.columns([0.42, 5.2, 0.58])
-
-        checked = check_col.checkbox(
-            "Concluído",
-            value=bool(item["comprado"]),
-            key=f"item_{item['id']}",
-            label_visibility="collapsed",
-        )
-
-        if checked != bool(item["comprado"]):
-            toggle_item(item["id"], checked)
-            st.rerun()
-
-        css_class = "item-name done" if item["comprado"] else "item-name"
-        text_col.markdown(
-            f'<div class="{css_class}">{item["nome"]}</div>',
-            unsafe_allow_html=True,
-        )
-
-        details = []
-        if float(item["quantidade"]) != 1 or item["unidade"] != "un":
-            details.append(f'{qty_text(item["quantidade"])} {item["unidade"]}')
-        if item["categoria"] and item["categoria"] != "Geral":
-            details.append(item["categoria"])
-
-        if details:
-            text_col.markdown(
-                f'<div class="item-meta">{" · ".join(details)}</div>',
-                unsafe_allow_html=True,
-            )
-
-        if delete_col.button(
-            "×",
-            key=f"delete_{item['id']}",
-            help="Excluir item",
-            use_container_width=True,
-        ):
-            delete_item(item["id"])
-            st.rerun()
-
+visible = filtered_items(items, view, search, category_filter)
 
 if not visible:
     st.markdown(
-        '<div class="empty">Nenhum item por aqui.</div>',
+        """
+        <div class="empty-state">
+            <strong>Nada por aqui</strong>
+            Adicione um item ou altere os filtros.
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 else:
-    visible_pending = [i for i in visible if not i["comprado"]]
-    visible_completed = [i for i in visible if i["comprado"]]
+    if view == "all":
+        pending = [item for item in visible if not item["comprado"]]
+        completed = [item for item in visible if item["comprado"]]
 
-    if visible_pending:
-        st.markdown('<div class="list-label">Pendentes</div>', unsafe_allow_html=True)
-        for item in visible_pending:
-            render_item(item)
+        if pending:
+            st.markdown(
+                f'<div class="list-label">Pendentes · {len(pending)}</div>',
+                unsafe_allow_html=True,
+            )
+            for item in pending:
+                render_item(item)
 
-    if visible_completed:
-        st.markdown('<div class="list-label">Concluídos</div>', unsafe_allow_html=True)
-        for item in visible_completed:
+        if completed:
+            with st.expander(
+                f"Concluídos ({len(completed)})",
+                expanded=False,
+            ):
+                for item in completed:
+                    render_item(item)
+    else:
+        st.markdown(
+            f'<div class="list-label">{len(visible)} item(ns)</div>',
+            unsafe_allow_html=True,
+        )
+        for item in visible:
             render_item(item)
