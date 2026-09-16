@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+
 import streamlit as st
 
 from database import (
@@ -94,7 +96,7 @@ def render_item(item: dict) -> None:
         with text_col:
             done_class = " done" if item["comprado"] else ""
             st.markdown(
-                f'<div class="item-title{done_class}">{item["nome"]}</div>',
+                f'<div class="item-title{done_class}">{escape(item["nome"])}</div>',
                 unsafe_allow_html=True,
             )
 
@@ -208,7 +210,10 @@ done_count = sum(bool(item["comprado"]) for item in items)
 pending_count = total - done_count
 
 with st.sidebar:
-    st.markdown('<div class="brand">✓ Mercado</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="brand"><span class="brand-mark">✓</span>Mercado</div>',
+        unsafe_allow_html=True,
+    )
 
     view = st.radio(
         "Visualização",
