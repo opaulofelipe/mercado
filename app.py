@@ -1,400 +1,379 @@
-from __future__ import annotations
-
-import json
-import time
-from datetime import datetime
-from html import escape
-from uuid import uuid4
-
 import streamlit as st
-from streamlit_local_storage import LocalStorage
-
-from styles import inject_styles
-
 
 st.set_page_config(
     page_title="Mercado",
-    page_icon="✓",
+    page_icon="🛒",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
 
-inject_styles()
-
-STORAGE_KEY = "mercado_items_v1"
-CATEGORIES = [
-    "Hortifruti",
-    "Padaria",
-    "Açougue",
-    "Frios e laticínios",
-    "Mercearia",
-    "Bebidas",
-    "Congelados",
-    "Higiene",
-    "Limpeza",
-    "Pet",
-    "Outros",
-]
-UNITS = ["un", "kg", "g", "L", "mL", "pct", "cx", "dz"]
-
-# Evita usar uma chave chamada "items" no st.session_state.
-# SessionStateProxy já possui o método .items(), o que pode fazer
-# st.session_state.items retornar um método em vez da lista salva.
-storage = LocalStorage()
-
-
-def now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
-
-
-def normalize_items(value) -> list[dict]:
-    if value in (None, "", []):
-        return []
-
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except (TypeError, json.JSONDecodeError):
-            return []
-
-    if not isinstance(value, list):
-        return []
-
-    normalized: list[dict] = []
-    for raw in value:
-        if not isinstance(raw, dict):
-            continue
-
-        name = str(raw.get("name", "")).strip()
-        if not name:
-            continue
-
-        try:
-            quantity = float(raw.get("quantity", 1) or 1)
-        except (TypeError, ValueError):
-            quantity = 1.0
-
-        normalized.append(
-            {
-                "id": str(raw.get("id") or uuid4()),
-                "name": name,
-                "quantity": quantity,
-                "unit": str(raw.get("unit", "un") or "un"),
-                "category": str(raw.get("category", "Outros") or "Outros"),
-                "completed": bool(raw.get("completed", False)),
-                "favorite": bool(raw.get("favorite", False)),
-                "created_at": str(raw.get("created_at") or now_iso()),
-                "updated_at": str(raw.get("updated_at") or now_iso()),
-            }
-        )
-
-    return normalized
-
-
-def storage_read() -> list[dict]:
-    """Lê a lista persistida no localStorage do navegador."""
-    try:
-        raw = storage.getItem(STORAGE_KEY)
-    except Exception:
-        return []
-    return normalize_items(raw)
-
-
-def storage_write(items: list[dict]) -> None:
-    """Grava a lista no localStorage do navegador."""
-    payload = json.dumps(items, ensure_ascii=False)
-    storage.setItem(STORAGE_KEY, payload)
-    # Dá tempo ao componente de concluir a escrita no browser antes do rerun.
-    time.sleep(0.15)
-
-
-def persist(items: list[dict], message: str | None = None) -> None:
-    storage_write(items)
-    if message:
-        st.session_state["toast_message"] = message
-    st.rerun()
-
-
-def quantity_text(value: float) -> str:
-    value = float(value)
-    return str(int(value)) if value.is_integer() else f"{value:g}".replace(".", ",")
-
-
-def find_item(items: list[dict], item_id: str) -> dict | None:
-    return next((item for item in items if item["id"] == item_id), None)
-
-
-def add_item(items: list[dict], name: str, quantity: float, unit: str, category: str) -> None:
-    name = name.strip()
-    if not name:
-        return
-
-    timestamp = now_iso()
-    items.insert(
-        0,
-        {
-            "id": str(uuid4()),
-            "name": name,
-            "quantity": float(quantity),
-            "unit": unit,
-            "category": category,
-            "completed": False,
-            "favorite": False,
-            "created_at": timestamp,
-            "updated_at": timestamp,
-        },
-    )
-
-
-def toggle_completed(items: list[dict], item_id: str) -> None:
-    item = find_item(items, item_id)
-    if item:
-        item["completed"] = not item["completed"]
-        item["updated_at"] = now_iso()
-        persist(items)
-
-
-def toggle_favorite(items: list[dict], item_id: str) -> None:
-    item = find_item(items, item_id)
-    if item:
-        item["favorite"] = not item["favorite"]
-        item["updated_at"] = now_iso()
-        persist(items)
-
-
-def delete_item(items: list[dict], item_id: str) -> None:
-    items[:] = [item for item in items if item["id"] != item_id]
-    st.session_state["editing_id"] = None
-    persist(items, "Item removido")
-
-
-def render_edit_form(items: list[dict], item: dict) -> None:
-    item_id = item["id"]
-
-    with st.container(border=True):
-        st.markdown(
-            '<div class="edit-heading">Editar item</div>',
-            unsafe_allow_html=True,
-        )
-
-        with st.form(f"edit_form_{item_id}", border=False):
-            name = st.text_input("Item", value=item["name"], max_chars=80)
-
-            c1, c2, c3 = st.columns([1, 1, 1.45], gap="small")
-            quantity = c1.number_input(
-                "Quantidade",
-                min_value=0.1,
-                value=float(item["quantity"]),
-                step=1.0,
-            )
-            unit = c2.selectbox(
-                "Unidade",
-                UNITS,
-                index=UNITS.index(item["unit"]) if item["unit"] in UNITS else 0,
-            )
-            category = c3.selectbox(
-                "Categoria",
-                CATEGORIES,
-                index=(
-                    CATEGORIES.index(item["category"])
-                    if item["category"] in CATEGORIES
-                    else CATEGORIES.index("Outros")
-                ),
-            )
-
-            save_col, delete_col = st.columns(2, gap="small")
-            save = save_col.form_submit_button(
-                "Salvar",
-                type="primary",
-                use_container_width=True,
-            )
-            remove = delete_col.form_submit_button(
-                "Excluir",
-                use_container_width=True,
-            )
-
-        if save:
-            if not name.strip():
-                st.error("Digite o nome do item.")
-            else:
-                current = find_item(items, item_id)
-                if current:
-                    current.update(
-                        {
-                            "name": name.strip(),
-                            "quantity": float(quantity),
-                            "unit": unit,
-                            "category": category,
-                            "updated_at": now_iso(),
-                        }
-                    )
-                st.session_state["editing_id"] = None
-                persist(items, "Item atualizado")
-
-        if remove:
-            delete_item(items, item_id)
-
-        if st.button("Cancelar", key=f"cancel_{item_id}"):
-            st.session_state["editing_id"] = None
-            st.rerun()
-
-
-def render_item(items: list[dict], item: dict) -> None:
-    item_id = item["id"]
-    completed = item["completed"]
-
-    with st.container(border=True):
-        check_col, text_col, star_col = st.columns([0.72, 5.8, 0.72], gap="small")
-
-        with check_col:
-            check_label = "✓" if completed else "○"
-            if st.button(
-                check_label,
-                key=f"check_{item_id}",
-                help="Marcar como pendente" if completed else "Marcar como concluído",
-                use_container_width=True,
-            ):
-                toggle_completed(items, item_id)
-
-        with text_col:
-            title_class = "task-name completed" if completed else "task-name"
-            st.markdown(
-                f"""
-                <div class="task-copy-button">
-                    <span class="{title_class}">{escape(item['name'])}</span>
-                    <span class="task-meta">{quantity_text(item['quantity'])} {escape(item['unit'])} · {escape(item['category'])}</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        with star_col:
-            star = "★" if item["favorite"] else "☆"
-            if st.button(
-                star,
-                key=f"star_{item_id}",
-                help="Remover dos favoritos" if item["favorite"] else "Favoritar",
-                use_container_width=True,
-            ):
-                toggle_favorite(items, item_id)
-
-        action_col, _ = st.columns([1.2, 5.8], gap="small")
-        with action_col:
-            if st.button(
-                "•••",
-                key=f"more_{item_id}",
-                use_container_width=True,
-                help="Opções do item",
-            ):
-                current_editing = st.session_state.get("editing_id")
-                st.session_state["editing_id"] = None if current_editing == item_id else item_id
-                st.rerun()
-
-    if st.session_state.get("editing_id") == item_id:
-        render_edit_form(items, item)
-
-
-def render_add_box(items: list[dict]) -> None:
-    with st.container(border=True):
-        with st.form("add_form", clear_on_submit=True, border=False):
-            name = st.text_input(
-                "Novo item",
-                placeholder="Adicionar uma tarefa",
-                label_visibility="collapsed",
-                max_chars=80,
-            )
-
-            with st.expander("Quantidade e categoria", expanded=False):
-                c1, c2, c3 = st.columns([1, 1, 1.45], gap="small")
-                quantity = c1.number_input(
-                    "Quantidade",
-                    min_value=0.1,
-                    value=1.0,
-                    step=1.0,
-                )
-                unit = c2.selectbox("Unidade", UNITS)
-                category = c3.selectbox(
-                    "Categoria",
-                    CATEGORIES,
-                    index=CATEGORIES.index("Outros"),
-                )
-
-            submitted = st.form_submit_button(
-                "＋ Adicionar",
-                type="primary",
-                use_container_width=True,
-            )
-
-        if submitted and name.strip():
-            add_item(items, name, quantity, unit, category)
-            persist(items, "Item adicionado")
-
-
-if "editing_id" not in st.session_state:
-    st.session_state["editing_id"] = None
-if "toast_message" not in st.session_state:
-    st.session_state["toast_message"] = None
-
-if st.session_state["toast_message"]:
-    st.toast(st.session_state["toast_message"])
-    st.session_state["toast_message"] = None
-
-# Importante: usamos uma variável Python normal para a lista. Assim evitamos
-# colisão com st.session_state.items(), que é um método interno do Streamlit.
-items = storage_read()
-
-pending = sorted(
-    [item for item in items if not item["completed"]],
-    key=lambda item: (not item["favorite"], item["created_at"]),
-)
-completed = [item for item in items if item["completed"]]
-
 st.markdown(
-    f"""
-    <div class="app-header">
-        <div class="app-kicker">Mercado</div>
-        <div class="app-title">Minha lista</div>
-        <div class="app-meta">{len(pending)} pendente(s) · {len(completed)} concluído(s)</div>
-    </div>
+    """
+    <style>
+      .stApp { background:#080808; }
+      .block-container { max-width:760px; padding:0.35rem 0.35rem 2rem; }
+      header[data-testid="stHeader"] { background:transparent; }
+      #MainMenu, footer { visibility:hidden; }
+    </style>
     """,
     unsafe_allow_html=True,
 )
 
-search = st.text_input(
-    "Buscar",
-    placeholder="Buscar item",
-    label_visibility="collapsed",
-).strip().casefold()
+APP_HTML = r'''
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<style>
+:root{
+  --green:#9EE493;
+  --mint:#DAF7DC;
+  --sage:#ABC8C0;
+  --mauve:#70566D;
+  --plum:#42273B;
+  --bg:#080808;
+  --surface:#1A191C;
+  --surface-2:#211F23;
+  --text:#F4F2F5;
+  --muted:#A49FA7;
+  --line:rgba(255,255,255,.06);
+  --shadow:0 10px 30px rgba(0,0,0,.18);
+}
+*{box-sizing:border-box}
+html{background:var(--bg);color-scheme:dark}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior-y:contain;
+}
+button,input,select{font:inherit}
+button{-webkit-tap-highlight-color:transparent}
+.app{max-width:720px;margin:0 auto;padding:18px 14px max(32px,env(safe-area-inset-bottom))}
+.header{padding:4px 4px 14px}
+.kicker{color:var(--green);font-size:13px;font-weight:700;margin-bottom:3px}
+h1{font-size:clamp(31px,8vw,43px);line-height:1.02;letter-spacing:-.035em;margin:0;font-weight:760}
+.meta{font-size:14px;color:var(--muted);margin-top:7px}
+.section-title{display:inline-flex;align-items:center;gap:7px;color:var(--green);font-size:14px;font-weight:700;margin:12px 4px 8px}
+.section-title.done-title{color:var(--sage);margin-top:18px}
+.count{opacity:.65;font-weight:600}
+.list{display:flex;flex-direction:column;gap:7px}
+.task{display:grid;grid-template-columns:48px minmax(0,1fr) 0px;align-items:center;min-height:70px;background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--line);border-radius:19px;box-shadow:var(--shadow);overflow:hidden;transition:grid-template-columns .18s ease,border-color .18s ease,transform .12s ease}
+.task.delete-armed{grid-template-columns:48px minmax(0,1fr) 58px;border-color:rgba(112,86,109,.55)}
+.check-wrap{height:100%;display:flex;align-items:center;justify-content:center;padding-left:4px}
+.check{width:30px;height:30px;border-radius:999px;border:2px solid var(--sage);background:transparent;color:#111;display:grid;place-items:center;padding:0;cursor:pointer;transition:.15s ease}
+.check:hover{border-color:var(--green)}
+.task.completed .check{background:var(--green);border-color:var(--green)}
+.check svg{width:17px;height:17px;opacity:0;transform:scale(.7);transition:.15s ease;stroke:#1B2A1D;stroke-width:3;fill:none}
+.task.completed .check svg{opacity:1;transform:scale(1)}
+.task-content{min-width:0;padding:14px 8px 14px 2px;cursor:default;user-select:none;-webkit-user-select:none;touch-action:pan-y}
+.task-name{font-size:17px;line-height:1.22;font-weight:520;white-space:normal;overflow-wrap:anywhere;transition:.15s ease}
+.task-sub{margin-top:4px;font-size:12.5px;color:#8F8992;line-height:1.25}
+.task.completed .task-name{color:#8F8B91;text-decoration:line-through;text-decoration-thickness:1.5px;text-decoration-color:#8F8B91}
+.task.completed .task-sub{color:#706C73}
+.trash{align-self:stretch;width:58px;border:0;background:rgba(112,86,109,.30);color:var(--mint);display:grid;place-items:center;cursor:pointer;opacity:0;pointer-events:none;transform:translateX(12px);transition:.18s ease}
+.task.delete-armed .trash{opacity:1;pointer-events:auto;transform:translateX(0)}
+.trash:active{background:rgba(112,86,109,.55)}
+.trash svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.completed-block{margin-top:4px}
+.empty{color:var(--muted);text-align:center;background:var(--surface);border:1px dashed rgba(171,200,192,.18);padding:22px 14px;border-radius:18px;font-size:14px}
+.composer{margin-top:18px;padding-top:8px}
+.composer-card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:9px;box-shadow:var(--shadow)}
+.add-row{display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:8px}
+.add-input{width:100%;height:49px;border-radius:15px;border:1px solid transparent;background:#242227;color:var(--text);padding:0 14px;outline:none;font-size:16px}
+.add-input::placeholder{color:#7E7881}
+.add-input:focus{border-color:rgba(158,228,147,.45);box-shadow:0 0 0 3px rgba(158,228,147,.08)}
+.add-btn{height:49px;width:48px;border:0;border-radius:15px;background:rgba(158,228,147,.16);color:var(--green);font-size:26px;display:grid;place-items:center;cursor:pointer}
+.add-btn:active{transform:scale(.97)}
+.details-toggle{margin-top:6px;border:0;background:transparent;color:var(--sage);font-size:12.5px;padding:7px 6px;cursor:pointer}
+.details{display:none;grid-template-columns:1fr 1fr 1.6fr;gap:8px;padding-top:5px}
+.details.open{display:grid}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11px;color:var(--muted);padding-left:2px}
+.field input,.field select{height:42px;min-width:0;border-radius:13px;border:1px solid var(--line);background:#242227;color:var(--text);padding:0 10px;outline:none}
+.hint{font-size:11.5px;color:#726D75;margin:8px 5px 0;line-height:1.35}
+.toast{position:fixed;left:50%;bottom:max(20px,env(safe-area-inset-bottom));transform:translate(-50%,18px);background:#2A272D;border:1px solid rgba(255,255,255,.08);color:var(--text);padding:10px 14px;border-radius:13px;font-size:13px;opacity:0;pointer-events:none;transition:.2s ease;z-index:50;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast button{margin-left:12px;background:transparent;border:0;color:var(--green);font-weight:700;cursor:pointer}
+@media(max-width:560px){
+  .app{padding:12px 9px max(28px,env(safe-area-inset-bottom))}
+  .header{padding:5px 4px 11px}
+  h1{font-size:34px}
+  .task{min-height:68px;border-radius:18px;grid-template-columns:46px minmax(0,1fr) 0px}
+  .task.delete-armed{grid-template-columns:46px minmax(0,1fr) 56px}
+  .check{width:29px;height:29px}
+  .task-name{font-size:16.5px}
+  .task-content{padding-top:13px;padding-bottom:13px}
+  .details{grid-template-columns:1fr 1fr}
+  .field.category{grid-column:1/-1}
+}
+@media(max-width:360px){
+  .app{padding-left:7px;padding-right:7px}
+  .details{grid-template-columns:1fr}
+  .field.category{grid-column:auto}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="header">
+    <div class="kicker">Mercado</div>
+    <h1>Minha lista</h1>
+    <div class="meta" id="meta">0 pendentes · 0 concluídos</div>
+  </header>
 
-if search:
-    pending = [item for item in pending if search in item["name"].casefold()]
-    completed = [item for item in completed if search in item["name"].casefold()]
+  <section>
+    <div class="section-title">Pendentes <span class="count" id="pendingCount">0</span></div>
+    <div class="list" id="pendingList"></div>
+  </section>
 
-if pending:
-    for item in pending:
-        render_item(items, item)
-else:
-    st.markdown(
-        """
-        <div class="empty-state">
-            <div class="empty-title">Nada pendente</div>
-            <div class="empty-copy">Adicione um item ou aproveite a lista zerada.</div>
+  <section class="completed-block" id="completedSection">
+    <div class="section-title done-title">✓ Concluídos <span class="count" id="doneCount">0</span></div>
+    <div class="list" id="doneList"></div>
+  </section>
+
+  <section class="composer">
+    <div class="composer-card">
+      <div class="add-row">
+        <input id="newName" class="add-input" maxlength="80" autocomplete="off" placeholder="Adicionar uma tarefa" aria-label="Novo item" />
+        <button id="addBtn" class="add-btn" aria-label="Adicionar item">＋</button>
+      </div>
+      <button id="detailsToggle" class="details-toggle" type="button">Quantidade e categoria</button>
+      <div id="details" class="details">
+        <div class="field">
+          <label for="qty">Quantidade</label>
+          <input id="qty" type="number" inputmode="decimal" min="0.1" step="0.1" value="1" />
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        <div class="field">
+          <label for="unit">Unidade</label>
+          <select id="unit">
+            <option>un</option><option>kg</option><option>g</option><option>L</option><option>mL</option><option>pct</option><option>cx</option><option>dz</option>
+          </select>
+        </div>
+        <div class="field category">
+          <label for="category">Categoria</label>
+          <select id="category">
+            <option>Hortifruti</option><option>Padaria</option><option>Açougue</option><option>Frios e laticínios</option><option>Mercearia</option><option>Bebidas</option><option>Congelados</option><option>Higiene</option><option>Limpeza</option><option>Pet</option><option selected>Outros</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="hint">Toque no círculo para concluir ou reabrir. Segure um item para mostrar a lixeira.</div>
+  </section>
+</div>
+<div id="toast" class="toast"><span id="toastText"></span><button id="undoBtn" hidden>Desfazer</button></div>
 
-with st.expander(
-    f"✓ Concluída ({len(completed)})",
-    expanded=bool(completed),
-):
-    for item in completed:
-        render_item(items, item)
+<script>
+(() => {
+  const STORAGE_KEY = 'mercado_items_v1';
+  const $ = (s) => document.querySelector(s);
+  const pendingList = $('#pendingList');
+  const doneList = $('#doneList');
+  const pendingCount = $('#pendingCount');
+  const doneCount = $('#doneCount');
+  const meta = $('#meta');
+  const completedSection = $('#completedSection');
+  const newName = $('#newName');
+  const qty = $('#qty');
+  const unit = $('#unit');
+  const category = $('#category');
+  const toast = $('#toast');
+  const toastText = $('#toastText');
+  const undoBtn = $('#undoBtn');
 
-    if completed and st.button("Limpar concluídos", use_container_width=True):
-        items[:] = [item for item in items if not item["completed"]]
-        persist(items, "Concluídos removidos")
+  let items = loadItems();
+  let lastDeleted = null;
+  let toastTimer = null;
 
-st.markdown('<div class="add-spacer"></div>', unsafe_allow_html=True)
-render_add_box(items)
-st.markdown('<div class="bottom-safe-area"></div>', unsafe_allow_html=True)
+  function uid(){
+    return (crypto && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function normalize(raw){
+    if(!Array.isArray(raw)) return [];
+    return raw.filter(x => x && typeof x === 'object' && String(x.name || '').trim()).map(x => ({
+      id:String(x.id || uid()),
+      name:String(x.name || '').trim(),
+      quantity:Number(x.quantity || 1),
+      unit:String(x.unit || 'un'),
+      category:String(x.category || 'Outros'),
+      completed:Boolean(x.completed),
+      favorite:Boolean(x.favorite),
+      created_at:String(x.created_at || new Date().toISOString()),
+      updated_at:String(x.updated_at || new Date().toISOString())
+    }));
+  }
+
+  function loadItems(){
+    try{return normalize(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));}
+    catch(_){return [];}
+  }
+
+  function save(){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  }
+
+  function formatQty(value){
+    const n = Number(value || 1);
+    return Number.isInteger(n) ? String(n) : String(n).replace('.', ',');
+  }
+
+  function showToast(text, undo=false){
+    clearTimeout(toastTimer);
+    toastText.textContent = text;
+    undoBtn.hidden = !undo;
+    toast.classList.add('show');
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 3200);
+  }
+
+  function disarmAll(except=null){
+    document.querySelectorAll('.task.delete-armed').forEach(el => {
+      if(el !== except) el.classList.remove('delete-armed');
+    });
+  }
+
+  function makeTask(item){
+    const row = document.createElement('article');
+    row.className = 'task' + (item.completed ? ' completed' : '');
+    row.dataset.id = item.id;
+
+    const checkWrap = document.createElement('div');
+    checkWrap.className = 'check-wrap';
+    const check = document.createElement('button');
+    check.className = 'check';
+    check.type = 'button';
+    check.setAttribute('aria-label', item.completed ? 'Voltar para pendente' : 'Marcar como concluído');
+    check.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg>';
+    check.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      item.completed = !item.completed;
+      item.updated_at = new Date().toISOString();
+      save();
+      render();
+    });
+    checkWrap.appendChild(check);
+
+    const content = document.createElement('div');
+    content.className = 'task-content';
+    const title = document.createElement('div');
+    title.className = 'task-name';
+    title.textContent = item.name;
+    const sub = document.createElement('div');
+    sub.className = 'task-sub';
+    sub.textContent = `${formatQty(item.quantity)} ${item.unit} · ${item.category}`;
+    content.append(title, sub);
+
+    const trash = document.createElement('button');
+    trash.className = 'trash';
+    trash.type = 'button';
+    trash.setAttribute('aria-label', `Excluir ${item.name}`);
+    trash.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>';
+    trash.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const index = items.findIndex(x => x.id === item.id);
+      if(index < 0) return;
+      lastDeleted = {item:items[index], index};
+      items.splice(index,1);
+      save();
+      render();
+      showToast('Item excluído', true);
+    });
+
+    let timer = null;
+    let startX = 0, startY = 0;
+    const cancelHold = () => { if(timer){clearTimeout(timer); timer=null;} };
+    content.addEventListener('pointerdown', (ev) => {
+      if(ev.pointerType === 'mouse' && ev.button !== 0) return;
+      startX = ev.clientX; startY = ev.clientY;
+      cancelHold();
+      timer = setTimeout(() => {
+        disarmAll(row);
+        row.classList.add('delete-armed');
+        if(navigator.vibrate) navigator.vibrate(30);
+        timer = null;
+      }, 560);
+    });
+    content.addEventListener('pointermove', (ev) => {
+      if(Math.hypot(ev.clientX-startX, ev.clientY-startY) > 11) cancelHold();
+    });
+    content.addEventListener('pointerup', cancelHold);
+    content.addEventListener('pointercancel', cancelHold);
+    content.addEventListener('pointerleave', cancelHold);
+    content.addEventListener('contextmenu', (ev) => { ev.preventDefault(); disarmAll(row); row.classList.add('delete-armed'); });
+    content.addEventListener('click', () => {
+      if(row.classList.contains('delete-armed')) row.classList.remove('delete-armed');
+    });
+
+    row.append(checkWrap, content, trash);
+    return row;
+  }
+
+  function render(){
+    pendingList.replaceChildren();
+    doneList.replaceChildren();
+    const pending = items.filter(x => !x.completed);
+    const done = items.filter(x => x.completed);
+
+    pendingCount.textContent = pending.length;
+    doneCount.textContent = done.length;
+    meta.textContent = `${pending.length} pendente${pending.length===1?'':'s'} · ${done.length} concluído${done.length===1?'':'s'}`;
+
+    if(pending.length === 0){
+      const empty = document.createElement('div');
+      empty.className='empty';
+      empty.textContent='Nenhum item pendente.';
+      pendingList.appendChild(empty);
+    } else {
+      pending.forEach(item => pendingList.appendChild(makeTask(item)));
+    }
+
+    completedSection.style.display = done.length ? '' : 'none';
+    done.forEach(item => doneList.appendChild(makeTask(item)));
+  }
+
+  function addItem(){
+    const name = newName.value.trim();
+    if(!name){ newName.focus(); return; }
+    const now = new Date().toISOString();
+    items.unshift({
+      id:uid(), name,
+      quantity:Math.max(.1, Number(qty.value || 1)),
+      unit:unit.value, category:category.value,
+      completed:false, favorite:false,
+      created_at:now, updated_at:now
+    });
+    save();
+    newName.value=''; qty.value='1'; unit.value='un'; category.value='Outros';
+    render();
+    newName.focus();
+  }
+
+  $('#addBtn').addEventListener('click', addItem);
+  newName.addEventListener('keydown', (ev) => { if(ev.key === 'Enter'){ ev.preventDefault(); addItem(); } });
+  $('#detailsToggle').addEventListener('click', () => $('#details').classList.toggle('open'));
+  undoBtn.addEventListener('click', () => {
+    if(!lastDeleted) return;
+    items.splice(Math.min(lastDeleted.index, items.length),0,lastDeleted.item);
+    lastDeleted=null; save(); render(); toast.classList.remove('show');
+  });
+  document.addEventListener('pointerdown', (ev) => {
+    if(!ev.target.closest('.task')) disarmAll();
+  });
+  window.addEventListener('storage', (ev) => {
+    if(ev.key === STORAGE_KEY){ items = loadItems(); render(); }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
+'''
+
+# HTML/JS roda dentro de um iframe do próprio app. O código continua sendo
+# entregue pelo Streamlit/Python, mas a lista é persistida diretamente no
+# localStorage do navegador e as interações não dependem de reruns do servidor.
+st.iframe(APP_HTML, width="stretch", height="content")
